@@ -35,6 +35,6 @@ python random_policy.py
 For training the DQL model:
 
 ```bash
-$ python dql_train.py --verbose --plot
+python dql_train.py --verbose --plot
 
 ```
