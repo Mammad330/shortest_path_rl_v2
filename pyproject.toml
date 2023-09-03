@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "shortest_path_rl"
+name = "shortest_path_rl_v2"
 version = "0.1.0"
 description = "Training a DRL agent for solving the shortest path problem in bi-directional cyclic graphs"
 authors = ["Mammad Jabrayilov <cebrayilovmemmed@gmail.com>"]
