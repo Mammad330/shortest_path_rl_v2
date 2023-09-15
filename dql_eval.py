@@ -9,7 +9,7 @@ from dql import DoubleDQL
 
 
 def main(args):
-
+    # Set device to GPU or CPU based on availability
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Load learning parameters
@@ -21,31 +21,32 @@ def main(args):
     np.random.seed(params['seed'])
     random.seed(params['seed'])
 
-    env = GraphEnv(
-        num_nodes=params['num_nodes'], destination_node=params['destination_node'],
-        bi_prob=params['bi_prob'])
+    # Create the environment
+    env = GraphEnv(num_nodes=params['num_nodes'], edge_prob=params['edge_prob'],
+                   destination_node=params['destination_node'],
+                   trans_prob_low=params['trans_prob_low'],
+                   trans_prob_high=params['trans_prob_high'])
 
     print(f"env.observation_space.size(): {env.observation_space.shape}")
     print(f"env.action_space.n: {env.action_space.n}")
 
-    # The DoubleDQL class object
+    # Create the DDQL agent
     dqn = DoubleDQL(train_env=env, hl1_size=params['hl1_size'],
                     hl2_size=params['hl2_size'], device=device)
 
-    dqn.load_main_dqn(model_path=args.path + 'models/' + (
-        'latest_policy.pth' if args.latest else 'best_policy.pth'))
+    # Load the saved best policy model from file
+    dqn.load_main_dqn(model_path=args.path + 'models/best_policy.pth')
+    dqn.main_dqn.eval()
 
-    # Evaluate saved best agent
-    dqn.final_evaluation()
+    # Evaluate the model
+    dqn.final_evaluation(eval_mode=True)
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
         description='DDQL Evaluation for Shortest Path problem')
     parser.add_argument('--path', type=str, default=None,
-                        help='Path to the trined model (default: None)')
-    parser.add_argument('--latest',  default=False, action='store_true',
-                        help='Evaluate the latest policy (default: False)')
+                        help='Path to the trained model (default: None)')
     args = parser.parse_args()
 
     main(args)
