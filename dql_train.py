@@ -42,6 +42,7 @@ def save_learning_params(max_train_steps: int
     learning_params['edge_prob'] = EDGE_PROB
     learning_params['trans_prob_low'] = TRANS_PROB_LOW
     learning_params['trans_prob_high'] = TRANS_PROB_HIGH
+    learning_params['lambda'] = LAMBDA
 
     # Adam
     # ----
@@ -101,17 +102,19 @@ def main(args):
 
     # Create the environment
     env = GraphEnv(
-        num_nodes=NUM_NODES, destination_node=DESTINATION_NODE, edge_prob=EDGE_PROB,
-        trans_prob_low=TRANS_PROB_LOW, trans_prob_high=TRANS_PROB_HIGH)
+        num_nodes=NUM_NODES, destination_node=DESTINATION_NODE,
+        edge_prob=EDGE_PROB, trans_prob_low=TRANS_PROB_LOW, lambda_=LAMBDA,
+        trans_prob_high=TRANS_PROB_HIGH)
 
     # If the number of nodes is less than 200, using Bellman-Ford algorithm,
     # calculate the expected average reward for reaching the destination node
     # starting from each valid starting node
     if NUM_NODES <= 200:
         start_time = time.time()
+        graph_copy = np.copy(env.graph)
         distances, shortest_paths = bellman_ford(
-            env.graph, env.trans_prob, NUM_NODES, DESTINATION_NODE,
-            env.possible_starting_nodes)
+            graph_copy, env.trans_prob, NUM_NODES, DESTINATION_NODE,
+            env.possible_starting_nodes, LAMBDA)
         end_time = time.time()
         print(f"Time taken for Bellman-Ford: {end_time - start_time:.2f} sec")
 
@@ -169,6 +172,7 @@ if __name__ == '__main__':
     EDGE_PROB = 0.3
     TRANS_PROB_LOW = 0.1
     TRANS_PROB_HIGH = 0.2
+    LAMBDA = 0.5
 
     # Adam
     # ------
