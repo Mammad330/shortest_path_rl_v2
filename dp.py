@@ -51,7 +51,8 @@ def main():
     # Using Bellman-Ford algorithm, find the shortest path from each valid
     # starting node to all other nodes
     distances, shortest_paths = bellman_ford(
-        graph, trans_prob, NUM_NODES, DESTINATION_NODE, valid_source_nodes)
+        graph, trans_prob, NUM_NODES, DESTINATION_NODE, valid_source_nodes,
+        LAMBDA)
 
     # Print the shortest path from each valid starting node to the destination
     # node, along with the number of hops and the total distance
@@ -87,5 +88,6 @@ if __name__ == '__main__':
     EDGE_PROB = 0.3
     TRANS_PROB_LOW = 0.1
     TRANS_PROB_HIGH = 0.2
+    LAMBDA = 0.5
 
     main()
