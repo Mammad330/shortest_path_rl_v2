@@ -179,7 +179,8 @@ def plot_all(axs, train_episodes: Sequence[int], train_loss: Sequence[float],
 
 def bellman_ford(graph: np.array, trans_prob: np.array, num_nodes: int,
                  destination_node: int, starting_nodes: Sequence[int],
-                 verbose: bool = False) -> (Sequence[float], dict):
+                 lambda_: float = 1.0, verbose: bool = False) -> (
+        Sequence[float], dict):
     """
     The Bellman-Ford algorithm for finding the shortest path from each valid
     starting node to the destination node
@@ -196,6 +197,9 @@ def bellman_ford(graph: np.array, trans_prob: np.array, num_nodes: int,
         The destination node
     starting_nodes: Sequence[int]
         List of valid starting nodes
+    lambda_: float
+        The lambda value for the weighted sum of expected distance and expected
+        time
     verbose: bool
         Whether to print the shortest path or not
 
@@ -259,10 +263,21 @@ def bellman_ford(graph: np.array, trans_prob: np.array, num_nodes: int,
                 # Get the distance of the nodes
                 du, dv = nodes[u], nodes[v]
 
+                # The distance of the destination node is just the weight of
+                # the edge
+                dist = graph[u, v]
+
+                # The expected time to traverse the edge from the source
+                # node (u) to the destination node (v) is the edge weight
+                # divided by the transition probability from u to v
+                expt_time = graph[u, v] * (1 / trans_prob[u, v])
+
                 # The distance of the destination node is the minimum of the
-                # current distance and the distance of the source node plus
-                # the edge weight
-                new_dist = du + (graph[u, v] * (1 / trans_prob[u, v]))
+                # current distance and the weighted sum of the distance and
+                # the time taken to traverse the edge from the source node to
+                # the destination node
+                new_dist = \
+                    du + (lambda_ * expt_time) + ((1 - lambda_) * dist)
 
                 # If the new distance is less than the current distance,
                 # update the distance and the path
