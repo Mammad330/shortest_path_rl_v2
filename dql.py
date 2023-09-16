@@ -376,8 +376,10 @@ class DoubleDQL():
         ascii_offset = 65 if num_nodes <= 60 else 21 if (num_nodes <= 100)\
             else None
 
-        # Initialize lists to store normalized episode rewards and episode
+        # Initialize lists to store normalized episode rewards, distance, and
+        # length (number of hops)
         episode_rewards = list()
+        episode_distances = list()
         episode_lengths = list()
         num_completed = 0
 
@@ -427,6 +429,7 @@ class DoubleDQL():
 
             # Store the normalized reward and the length of the current episode
             episode_rewards.append(episode_reward)
+            episode_distances.append((num_nodes * 10) - episode_reward)
             episode_lengths.append(episode_length)
 
             # Increment the number of completed episodes (where the agent
@@ -444,9 +447,9 @@ class DoubleDQL():
                 path_string = str([' -> '.join(path_list)])
 
                 print(f"Shortest path from {from_node} to {to_node}: " +
-                      f"{path_string} -- Length: " +
+                      f"{path_string} -- Total Distance: " +
                       f"{np.round((num_nodes * 10) - episode_reward, 4)} " +
-                      f"({len(path_list) - 1} hops)")
+                      f"({episode_length} hops)")
             else:
                 path_string = path_list[0]
                 for path, action in zip(path_list[1:], action_list):
@@ -459,7 +462,12 @@ class DoubleDQL():
         print("\nFinal Policy Evaluation Statistics:")
         print(f"Total number of episodes: {len(episode_rewards)}")
         print(f"Mean Normalized Episodic Reward: {np.mean(episode_rewards)}")
-        print(f"Median Normalized Episodic Reward: {np.median(episode_rewards)}")
+        print("Median Normalized Episodic Reward: " +
+              f"{np.median(episode_rewards)}")
+        print(f"Mean Distance to Destination: {np.mean(episode_distances)}")
+        print(f"Median Distance to Destination: {np.median(episode_distances)}")
+        print(f"Mean Episode Length: {np.mean(episode_lengths)}")
+        print(f"Median Episode Length: {np.median(episode_lengths)}")
         print(f"Total no. of episodes completed: " +
               f"{num_completed} out of {len(episode_rewards)} episodes")
 
