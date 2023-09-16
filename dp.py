@@ -29,14 +29,10 @@ def main():
         valid_graph, valid_source_nodes, non_dest_nodes = validate_graph(
             graph, NUM_NODES)
 
-    print(f"graph:\n{graph}")
-
     # Generate a random transition probability matrix for the graph, by
     # sampling from a uniform distribution
     trans_prob = np.random.uniform(TRANS_PROB_LOW, TRANS_PROB_HIGH,
                                    (NUM_NODES, NUM_NODES))
-
-    print(f"trans_prob:\n{trans_prob}")
 
     # Check if the destination-node is in the list of possible starting nodes,
     # and remove if it is
@@ -65,16 +61,23 @@ def main():
                                         shortest_paths[starting_node]])])
 
         print(f"Shortest path from {from_node} to {to_node}: {path_string} " +
-              f"-- Length: {np.round(distances[i], 4)} " +
+              f"-- Total Distance: {np.round(distances[i], 4)} " +
               f"({len(shortest_paths[starting_node]) - 1} hops)")
 
     # Calculate the expected average reward for reaching the destination node
     # from each valid starting node
     expecter_avg_reward = np.mean((NUM_NODES * 10) - np.array(distances))
 
+    path_lengths = [len(v) - 1 for k, v in shortest_paths.items()]
+
     end_time = time.time()
-    print("\nTraining Time: %.2f(s)" % (end_time - start_time))
+    print("\nTime taken for Bellman-Ford: %.2f(s)" % (end_time - start_time))
     print(f"Expected Avg. Reward: {np.round(expecter_avg_reward, 4)}")
+    print(f"Mean Distance to Destination: {np.round(np.mean(distances), 4)}")
+    print("Median Distance to Destination: " +
+          f"{np.round(np.median(distances), 4)}")
+    print(f"Mean Number of Hops: {np.round(np.mean(path_lengths), 4)}")
+    print(f"Median Number of Hops: {np.round(np.median(path_lengths), 4)}")
 
     # Plot the graph for visualization
     plot_graph_network(X=graph_copy, v=NUM_NODES, dest=DESTINATION_NODE)

@@ -31,7 +31,8 @@ class GraphEnv(gym.Env):
     """
 
     def __init__(self, num_nodes: int, destination_node: int, edge_prob: float,
-                 trans_prob_low: float, trans_prob_high: float):
+                 trans_prob_low: float, trans_prob_high: float,
+                 lambda_: float = 1.0):
 
         if destination_node < 0 or destination_node >= num_nodes:
             print("Error: destination_node should be 0 >= destination_node " +
@@ -48,6 +49,10 @@ class GraphEnv(gym.Env):
 
         # The fixed destination node for all episodes
         self.destination_node = destination_node
+
+        # The lambda value for the reward function, to control the trade-off
+        # between distance travelled and travel time
+        self.lambda_ = lambda_
 
         # Variables to keep track of the current state of the environment
         self.current_node = None
@@ -188,6 +193,10 @@ class GraphEnv(gym.Env):
         # node the agent intends to transition to
         distance = self.graph[self.current_node, action]
 
+        # Travel time is the same as the distance, since we are considering
+        # speed of travel as one unit of distance travelled per unit of time.
+        travel_time = self.graph[self.current_node, action]
+
         if distance < 0:
             # The agent is trying to travers through a non-existing edge.
             # Terminate the episode and penalize the agent
@@ -199,13 +208,25 @@ class GraphEnv(gym.Env):
                   f"{np.where(self.graph[self.current_node] > 0)[0].tolist()}")
         else:
             if eval:
+                # The expected travel time is the travel time multiplied by the
+                # inverse of the transition probability.
+                # Since we are considering speed or travel as one unit of
+                # distance travelled per unit of time, the travel time is the
+                # same as the distance.
+                expected_travel_time = distance * \
+                    (1 / self.trans_prob[self.current_node, action])
+
+                # The reward is modelled as a combination of expected travel
+                # time and the expected distance travelled, based on the
+                # transition probability
+                reward = -((self.lambda_ * expected_travel_time) +
+                           ((1 - self.lambda_) * distance))
+
                 # During policy evaluation, transition to the next-node without
                 # considering transition probability, but the reward is
                 # calculated as the expected reward based on the transition
                 # probability
                 self.current_node = action
-                reward = \
-                    -distance * (1/self.trans_prob[self.current_node, action])
             else:
                 # Transition to the next-node based on the transition
                 # probability
@@ -216,9 +237,16 @@ class GraphEnv(gym.Env):
                     self.current_node = action
                 else:
                     # Stay in the current node, if the transition probability
-                    # is not met
-                    pass
-                reward = -distance
+                    # is not met. Hence, the distance travelled is 0
+                    distance = 0
+
+                # The reward is modelled as a combination of travel time and
+                # distance travelled. Even when the agent stays in the current
+                # node (due to transition probability), the travel time is
+                # considered, to emulate the additional time taken to traverse
+                # through an edge on disruption
+                reward = -((self.lambda_ * travel_time) +
+                           ((1 - self.lambda_) * distance))
 
             terminated = False
 

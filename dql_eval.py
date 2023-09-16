@@ -22,10 +22,11 @@ def main(args):
     random.seed(params['seed'])
 
     # Create the environment
-    env = GraphEnv(num_nodes=params['num_nodes'], edge_prob=params['edge_prob'],
-                   destination_node=params['destination_node'],
-                   trans_prob_low=params['trans_prob_low'],
-                   trans_prob_high=params['trans_prob_high'])
+    env = GraphEnv(
+        num_nodes=params['num_nodes'], edge_prob=params['edge_prob'],
+        destination_node=params['destination_node'], lambda_=params['lambda'],
+        trans_prob_low=params['trans_prob_low'],
+        trans_prob_high=params['trans_prob_high'])
 
     print(f"env.observation_space.size(): {env.observation_space.shape}")
     print(f"env.action_space.n: {env.action_space.n}")
@@ -36,7 +37,6 @@ def main(args):
 
     # Load the saved best policy model from file
     dqn.load_main_dqn(model_path=args.path + 'models/best_policy.pth')
-    dqn.main_dqn.eval()
 
     # Evaluate the model
     dqn.final_evaluation(eval_mode=True)
