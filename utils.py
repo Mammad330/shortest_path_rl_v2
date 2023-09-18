@@ -30,7 +30,7 @@ def plot_graph_network(X: np.array, v: int, dest: int, t: int = 0):
         Time to wait before closing the plot window
     """
     # Check if the graph is too large to plot
-    if v > 200:
+    if v > 2:
         print("Graph too large to plot")
         return
 
