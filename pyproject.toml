@@ -6,7 +6,7 @@ authors = ["Mammad Jabrayilov <cebrayilovmemmed@gmail.com>"]
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python = ">=3.10,<3.11"
+python = ">=3.10,<3.11.2"
 gymnasium = ">=0.28.1"
 torch = "^2.0"
 numpy = "^1.24"
