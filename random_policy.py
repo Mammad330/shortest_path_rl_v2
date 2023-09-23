@@ -10,7 +10,7 @@ def main():
     random.seed(SEED)
 
     # ASCII offset for converting node numbers to alphabets for printing
-    ascii_offset = 65 if NUM_NODES <= 60 else 21 if NUM_NODES <= 100 else None
+    ascii_offset = 65 if NUM_NODES <= 60 else 21 if NUM_NODES <= 60 else None
 
     # Create the environment
     env = GraphEnv(

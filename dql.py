@@ -373,7 +373,7 @@ class DoubleDQL():
         num_nodes = self.train_env.num_nodes
 
         # ASCII offset for converting node numbers to alphabets for printing
-        ascii_offset = 65 if num_nodes <= 60 else 21 if (num_nodes <= 100)\
+        ascii_offset = 65 if num_nodes <= 60 else 21 if (num_nodes <= 60)\
             else None
 
         # Initialize lists to store normalized episode rewards, distance, and
@@ -644,9 +644,14 @@ class DoubleDQL():
                     torch.save(self.main_dqn.state_dict(),
                                path + 'models/best_policy.pth')
                     best_eval_reward = mean_eval_rewards
+                    time_since_start = np.round(
+                        (time.time() - start_time) / 60, 2)
                     saved_model_txt = \
-                        f"Best Model Saved @ Episode {episode_count + 1} with " + \
-                        f"eval reward: {np.round(best_eval_reward, 4)}"
+                        f"Best Model Saved @ Episode {episode_count + 1} " + \
+                        f"with eval reward: {np.round(best_eval_reward, 4)}" + \
+                        f" after: {time_since_start} minutes" + \
+                        ('' if baseline is None else ("\nDP-Baseline: " +
+                         f"{np.round(baseline, 4)}"))
 
                 # Plot loss, rewards, and transition percentage
                 plot_all(

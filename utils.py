@@ -30,7 +30,7 @@ def plot_graph_network(X: np.array, v: int, dest: int, t: int = 0):
         Time to wait before closing the plot window
     """
     # Check if the graph is too large to plot
-    if v > 2:
+    if v > 200:
         print("Graph too large to plot")
         return
 
@@ -38,7 +38,7 @@ def plot_graph_network(X: np.array, v: int, dest: int, t: int = 0):
     adj_mat = generate_adjacency_matrix(X)
 
     # ASCII offset for converting node numbers to alphabets
-    ascii_offset = 65 if X.shape[0] <= 60 else 21 if X.shape[0] <= 100 else None
+    ascii_offset = 65 if X.shape[0] <= 60 else 21 if X.shape[0] <= 60 else None
 
     # Create a list of directed edges associated with vertices vᵢ and vⱼ,
     # ∀ i, j ∈ {1, 2, ..., |V|}
@@ -119,9 +119,18 @@ def plot_all(axs, train_episodes: Sequence[int], train_loss: Sequence[float],
     axs[0].set(xlabel='Episode')
     axs[0].legend(loc='upper right')
 
+    # Calculate the running average of training reward and length over a window
+
+    window_size = 100
+    train_reward_avg = np.convolve(
+        train_reward, np.ones(window_size) / window_size, mode='valid')
+    train_epi_len_avg = np.convolve(
+        train_episode_len, np.ones(window_size) / window_size, mode='valid')
+
     # Normalized episodic reward of the policy during training and evaluation
     axs[1].clear()
-    axs[1].plot(train_episodes, train_reward, color='red', label='Train')
+    axs[1].plot(train_episodes[window_size-1:], train_reward_avg, color='red',
+                label='Train')
     axs[1].plot(eval_episodes, eval_reward, color='blue', label='Eval')
     if baseline is not None:
         axs[1].plot(eval_episodes, [baseline] * len(eval_episodes),
@@ -133,9 +142,10 @@ def plot_all(axs, train_episodes: Sequence[int], train_loss: Sequence[float],
 
     # Episode lengths
     axs[2].clear()
-    axs[2].plot(train_episodes, train_episode_len, label='Train Episode Len.',
-                color='red')
-    axs[2].plot(eval_episodes, eval_episode_len, color='blue', label='Eval Episode Len.')
+    axs[2].plot(train_episodes[window_size-1:], train_epi_len_avg,
+                label='Train Episode Len.', color='red')
+    axs[2].plot(eval_episodes, eval_episode_len, color='blue',
+                label='Eval Episode Len.')
     axs[2].set(title="Episode Length")
     axs[2].set(ylabel='Steps')
     axs[2].set(xlabel='Episode')
@@ -236,7 +246,7 @@ def bellman_ford(graph: np.array, trans_prob: np.array, num_nodes: int,
     dist_list = list()
 
     # ASCII offset for converting node numbers to alphabets for printing
-    ascii_offset = 65 if num_nodes <= 60 else 21 if num_nodes <= 100 else None
+    ascii_offset = 65 if num_nodes <= 60 else 21 if num_nodes <= 60 else None
 
     # Find the shortest path starting from each valid starting node to all
     # other nodes

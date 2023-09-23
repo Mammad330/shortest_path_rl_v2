@@ -11,7 +11,7 @@ def main():
     random.seed(SEED)
 
     # ASCII offset for converting node numbers to alphabets for printing
-    ascii_offset = 65 if NUM_NODES <= 60 else 21 if NUM_NODES <= 100 else None
+    ascii_offset = 65 if NUM_NODES <= 60 else 21 if NUM_NODES <= 60 else None
 
     # Generate a random directed cyclical graph with n nodes
     graph = generate_random_graph(NUM_NODES, EDGE_PROB)
@@ -57,7 +57,8 @@ def main():
             chr(ascii_offset + starting_node))
         to_node = str(DESTINATION_NODE) if ascii_offset is None else (
             chr(ascii_offset + DESTINATION_NODE))
-        path_string = str([' -> '.join([chr(ascii_offset + n) for n in
+        path_string = str([' -> '.join([str(n) if ascii_offset is None else
+                                        chr(ascii_offset + n) for n in
                                         shortest_paths[starting_node]])])
 
         print(f"Shortest path from {from_node} to {to_node}: {path_string} " +
@@ -88,9 +89,9 @@ if __name__ == '__main__':
     SEED = 0
     NUM_NODES = 25
     DESTINATION_NODE = 20
-    EDGE_PROB = 0.3
-    TRANS_PROB_LOW = 0.1
-    TRANS_PROB_HIGH = 0.2
+    EDGE_PROB = 0.1
+    TRANS_PROB_LOW = 0.2
+    TRANS_PROB_HIGH = 0.8
     LAMBDA = 0.5
 
     main()
