@@ -170,8 +170,8 @@ if __name__ == '__main__':
     NUM_NODES = 25
     DESTINATION_NODE = 20
     EDGE_PROB = 0.3
-    TRANS_PROB_LOW = 0.1
-    TRANS_PROB_HIGH = 0.2
+    TRANS_PROB_LOW = 0.2
+    TRANS_PROB_HIGH = 0.8
     LAMBDA = 0.5
 
     # Adam

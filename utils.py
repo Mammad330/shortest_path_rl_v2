@@ -2,6 +2,7 @@ import numpy as np
 import torch
 import matplotlib.pyplot as plt
 import networkx as nx
+import pandas as pd
 
 from typing import Sequence
 
@@ -30,7 +31,7 @@ def plot_graph_network(X: np.array, v: int, dest: int, t: int = 0):
         Time to wait before closing the plot window
     """
     # Check if the graph is too large to plot
-    if v > 200:
+    if v > 2:
         print("Graph too large to plot")
         return
 
@@ -318,3 +319,41 @@ def bellman_ford(graph: np.array, trans_prob: np.array, num_nodes: int,
 
     # Return the list of distances and the dictionary of shortest paths
     return dist_list, shortest_paths
+
+
+
+def process_npy_files(npy_file_path1, npy_file_path2, window_size, output_csv_file):
+    # Load the first .npy file (for raw data)
+    data1 = np.load(npy_file_path1)
+
+    # Apply a rolling mean to smooth the first data
+    smoothed_data1 = np.convolve(data1, np.ones(window_size) / window_size, mode='valid')
+
+    # Load the second .npy file (for actual data)
+    data2 = np.load(npy_file_path2)
+
+    # Determine the maximum length between the two datasets
+    max_length = max(len(smoothed_data1), len(data2))
+
+    # Pad both arrays to make them the same length
+    smoothed_data1 = np.pad(smoothed_data1, (0, max_length - len(smoothed_data1)), mode='edge')
+    data2 = np.pad(data2, (0, max_length - len(data2)), mode='edge')
+
+    # Create a DataFrame to store the smoothed data and actual data
+    df = pd.DataFrame({'Smoothed Data': smoothed_data1, 'Actual Data': data2})
+
+    # Save the combined data to a single CSV file
+    df.to_csv(output_csv_file, index=False)
+
+    # Create a plot to display the smoothed data and actual data
+    plt.figure(figsize=(10, 6))
+    plt.plot(smoothed_data1, label='Smoothed Data')
+    plt.plot(data2, label='Actual Data')
+    plt.xlabel('Data Point')
+    plt.ylabel('Value')
+    plt.title('Smoothed Data vs. Actual Data')
+    plt.legend()
+    plt.grid(True)
+
+    # Display the plot
+    plt.show()
