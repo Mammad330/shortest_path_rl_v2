@@ -1,5 +1,6 @@
 import gymnasium as gym
 import numpy as np
+import json
 import sys
 
 from typing import Sequence, Optional, Union, Mapping
@@ -28,64 +29,107 @@ class GraphEnv(gym.Env):
             The lower bound of the transition probability
         trans_prob_high : float
             The upper bound of the transition probability
+        lambda_ : float
+            The lambda value for the reward function, to control the trade-off
+            between distance travelled and travel time
+        path: str
+            The path to the directory where the graph related data is stored
+        graph_path: str
+            The path to the directory from where load graph related data
     """
 
     def __init__(self, num_nodes: int, destination_node: int, edge_prob: float,
                  trans_prob_low: float, trans_prob_high: float,
-                 lambda_: float = 1.0):
+                 lambda_: float = 1.0, path: Optional[str] = None,
+                 graph_path: Optional[str] = None):
 
-        if destination_node < 0 or destination_node >= num_nodes:
-            print("Error: destination_node should be 0 >= destination_node " +
-                  "< num_node")
-            sys.exit()
+        # Check if the graph_path is provided
+        if graph_path is not None:
+            # Load graph from file
+            self.graph = np.load(graph_path + 'data/graph.npy')
+            self.num_nodes = self.graph.shape[0]
+            self.episode_length = self.num_nodes
 
-        # The number of nodes/vertices in the graph
-        self.num_nodes = num_nodes
+            # Load json file with other environment parameters
+            with open(graph_path + 'learning/params.dat') as pf:
+                env_params = json.load(pf)
 
-        # The maximum number of steps in an episode. This is set to the number
-        # of nodes in the graph, as the shortest path between any two nodes
-        # cannot be more than the number of nodes in the graph
-        self.episode_length = num_nodes
+            # Set the destination node and lambda value
+            self.destination_node = env_params['destination_node']
+            self.lambda_ = env_params['lambda']
 
-        # The fixed destination node for all episodes
-        self.destination_node = destination_node
+            # Load the list of possible starting nodes from file
+            self.possible_starting_nodes = np.load(
+                graph_path + 'data/starting_nodes.npy').tolist()
 
-        # The lambda value for the reward function, to control the trade-off
-        # between distance travelled and travel time
-        self.lambda_ = lambda_
+            # Load the transition probability matrix from file
+            self.trans_prob = np.load(graph_path + 'data/trans_prob.npy')
+        else:
+            # The number of nodes/vertices in the graph
+            self.num_nodes = num_nodes
+
+            # The maximum number of steps in an episode. This is set to the
+            # number of nodes in the graph, as the shortest path between any
+            # two nodes cannot be more than the number of nodes in the graph
+            self.episode_length = num_nodes
+
+            # The fixed destination node for all episodes
+            self.destination_node = destination_node
+
+            # The lambda value for the reward function, to control the trade-off
+            # between distance travelled and travel time
+            self.lambda_ = lambda_
+
+            # Check if the destination node is within the range of the number of
+            # nodes in the graph
+            if (self.destination_node < 0 or
+                    self.destination_node >= self.num_nodes):
+                print("Error: destination_node should be 0 >= destination_node " +
+                      "< num_node")
+                sys.exit()
+
+            # Generate a random directed cyclical graph with n nodes
+            self.graph = generate_random_graph(num_nodes, edge_prob)
+
+            # Check if the generated graph is valid (traversable)
+            valid_graph, valid_source_nodes, non_dest_nodes = \
+                validate_graph(self.graph, num_nodes)
+
+            # Regenerate graph, if not valid or if destination-node is not
+            # reachable
+            while not valid_graph or self.destination_node in non_dest_nodes:
+                # Regenerate graph, if not valid
+                self.graph = generate_random_graph(num_nodes, edge_prob)
+
+                # Check if the generated graph is valid (traversable)
+                valid_graph, valid_source_nodes, non_dest_nodes = validate_graph(
+                    self.graph, num_nodes)
+
+            # List of possible starting-nodes, from which an episode can start
+            self.possible_starting_nodes = valid_source_nodes
+
+            # Check if the destination-node is in the list of possible starting
+            # nodes, and remove if it is
+            if self.destination_node in self.possible_starting_nodes:
+                self.possible_starting_nodes.remove(self.destination_node)
+
+            # Generate a random transition probability matrix for the graph, by
+            # sampling from a uniform distribution
+            self.trans_prob = np.random.uniform(trans_prob_low,
+                                                trans_prob_high,
+                                                (num_nodes, num_nodes))
+
+        if path is not None:
+            # Save the graph, transition probability matrix, and the list of
+            # possible starting nodes to file
+            np.save(path + 'data/graph.npy', self.graph)
+            np.save(path + 'data/trans_prob.npy', self.trans_prob)
+            np.save(path + 'data/starting_nodes.npy',
+                    self.possible_starting_nodes)
 
         # Variables to keep track of the current state of the environment
         self.current_node = None
         self.episode_step = 0
-
-        # Generate a random directed cyclical graph with n nodes
-        self.graph = generate_random_graph(num_nodes, edge_prob)
-
-        # Check if the generated graph is valid (traversable)
-        valid_graph, valid_source_nodes, non_dest_nodes = \
-            validate_graph(self.graph, num_nodes)
-
-        # Regenerate graph, if not valid or destination-node is not reachable
-        while not valid_graph or self.destination_node in non_dest_nodes:
-            # Regenerate graph, if not valid
-            self.graph = generate_random_graph(num_nodes, edge_prob)
-
-            # Check if the generated graph is valid (traversable)
-            valid_graph, valid_source_nodes, non_dest_nodes = validate_graph(
-                self.graph, num_nodes)
-
-        # List of possible starting-nodes, from which to start an episode from
-        self.possible_starting_nodes = valid_source_nodes
-
-        # Check if the destination-node is in the list of possible starting
-        # nodes, and remove if it is
-        if self.destination_node in self.possible_starting_nodes:
-            self.possible_starting_nodes.remove(self.destination_node)
-
-        # Generate a random transition probability matrix for the graph, by
-        # sampling from a uniform distribution
-        self.trans_prob = np.random.uniform(trans_prob_low, trans_prob_high,
-                                            (num_nodes, num_nodes))
 
         # Plot the graph for visualization
         plot_graph_network(X=self.graph, v=num_nodes, dest=destination_node)

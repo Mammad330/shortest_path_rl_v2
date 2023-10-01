@@ -3,7 +3,7 @@ import torch
 import matplotlib.pyplot as plt
 import networkx as nx
 import pandas as pd
-
+import os
 from typing import Sequence
 
 from graph_generator import generate_adjacency_matrix
@@ -31,7 +31,7 @@ def plot_graph_network(X: np.array, v: int, dest: int, t: int = 0):
         Time to wait before closing the plot window
     """
     # Check if the graph is too large to plot
-    if v > 2:
+    if v > 200:
         print("Graph too large to plot")
         return
 
@@ -139,7 +139,7 @@ def plot_all(axs, train_episodes: Sequence[int], train_loss: Sequence[float],
     axs[1].set(title='Normalized Episode Reward')
     axs[1].set(ylabel='Normalized Reward')
     axs[1].set(xlabel='Episode')
-    axs[1].legend(loc='lower right')
+    axs[1].legend(loc='upper right')
 
     # Episode lengths
     axs[2].clear()
@@ -191,7 +191,7 @@ def plot_all(axs, train_episodes: Sequence[int], train_loss: Sequence[float],
 def bellman_ford(graph: np.array, trans_prob: np.array, num_nodes: int,
                  destination_node: int, starting_nodes: Sequence[int],
                  lambda_: float = 1.0, verbose: bool = False) -> (
-        Sequence[float], dict):
+        Sequence[float], Sequence[float], Sequence[float], dict):
     """
     The Bellman-Ford algorithm for finding the shortest path from each valid
     starting node to the destination node
@@ -242,9 +242,11 @@ def bellman_ford(graph: np.array, trans_prob: np.array, num_nodes: int,
     # destination node
     shortest_paths = dict()
 
-    # Create a list of distances from each valid starting node to the
-    # destination node
+    # Create a list of costs, distances and expected-time from each valid
+    # starting node to the destination node
+    cost_list = list()
     dist_list = list()
+    time_list = list()
 
     # ASCII offset for converting node numbers to alphabets for printing
     ascii_offset = 65 if num_nodes <= 60 else 21 if num_nodes <= 60 else None
@@ -252,16 +254,22 @@ def bellman_ford(graph: np.array, trans_prob: np.array, num_nodes: int,
     # Find the shortest path starting from each valid starting node to all
     # other nodes
     for starting_node in starting_nodes:
-        # Create a dictionary of nodes
-        nodes = dict()
+        # Create dictionaries for storing the cost, distance and the expected
+        # time to traverse the edge from the source node to the destination node
+        cost = dict()
+        travel_distance = dict()
+        travel_time = dict()
 
         # Create a dictionary of nodes with the shortest path from the
         # source node
         paths = dict()
 
-        # Initialize all nodes with infinity distance and empty path
+        # Initialize all nodes with infinity cost (if not starting node), zero
+        # distance and time, and empty path
         for node in range(num_nodes):
-            nodes[node] = 0 if node == starting_node else np.inf
+            cost[node] = 0 if node == starting_node else np.inf
+            travel_distance[node] = 0
+            travel_time[node] = 0
             paths[node] = [starting_node] if node == starting_node else []
 
         # Relax all edges |V| - 1 times
@@ -271,8 +279,14 @@ def bellman_ford(graph: np.array, trans_prob: np.array, num_nodes: int,
                 # Get the nodes connected by the edge
                 u, v = edge_pair[0], edge_pair[1]
 
+                # Get the cost of the nodes
+                cu, cv = cost[u], cost[v]
+
                 # Get the distance of the nodes
-                du, dv = nodes[u], nodes[v]
+                du, dv = travel_distance[u], travel_distance[v]
+
+                # Get the expected travel time of the nodes
+                tu, tv = travel_time[u], travel_time[v]
 
                 # The distance of the destination node is just the weight of
                 # the edge
@@ -283,17 +297,27 @@ def bellman_ford(graph: np.array, trans_prob: np.array, num_nodes: int,
                 # divided by the transition probability from u to v
                 expt_time = graph[u, v] * (1 / trans_prob[u, v])
 
-                # The distance of the destination node is the minimum of the
-                # current distance and the weighted sum of the distance and
-                # the time taken to traverse the edge from the source node to
-                # the destination node
-                new_dist = \
-                    du + (lambda_ * expt_time) + ((1 - lambda_) * dist)
+                # This is for counting the total expected travel time
+                trav_time = tu + (graph[u, v] * (1 / trans_prob[u, v]))
 
-                # If the new distance is less than the current distance,
-                # update the distance and the path
-                if new_dist < dv:
-                    nodes[v] = new_dist
+                # The distance of the destination node is the minimum of the
+                # current distance and the distance from the source node to
+                # the destination node
+                new_dist = du + dist
+
+                # The path cost between two nodes is calculated as the minimum
+                # of the current cost and the weighted sum of the distance and
+                # the time taken to traverse the edge from the source node (u)
+                # to the destination node (v)
+                new_cost = \
+                    cu + (lambda_ * expt_time) + ((1 - lambda_) * dist)
+
+                # If the new cost is less than the current cost, update the
+                # cost, and save the new distance, time, and path
+                if new_cost < cv:
+                    cost[v] = new_cost
+                    travel_distance[v] = new_dist
+                    travel_time[v] = trav_time
                     paths[v] = paths[u] + [v]
 
         if verbose:
@@ -309,17 +333,21 @@ def bellman_ford(graph: np.array, trans_prob: np.array, num_nodes: int,
                 in paths[destination_node]])])
 
             print(f"Shortest path from {from_node} to {to_node}: " +
-                  f"{path_string} -- Length: " +
-                  f"{np.round(nodes[destination_node], 4)} " +
-                  f"({len(paths[destination_node]) - 1} hops)")
+                  f"{path_string} -- Cost: " +
+                  f"{np.round(cost[destination_node], 4)} --"
+                  f"Distance: {np.round(travel_distance[destination_node])}" +
+                  f" -- Expected Time: " +
+                  f"{np.round(travel_time[destination_node], 4)} -- " +
+                  f"No. of hops: {len(paths[destination_node]) - 1}")
 
         # Store the distance and the shortest path from the source node
         shortest_paths[starting_node] = paths[destination_node]
-        dist_list.append(nodes[destination_node])
+        cost_list.append(cost[destination_node])
+        dist_list.append(travel_distance[destination_node])
+        time_list.append(travel_time[destination_node])
 
     # Return the list of distances and the dictionary of shortest paths
-    return dist_list, shortest_paths
-
+    return cost_list, dist_list, time_list, shortest_paths
 
 
 def process_npy_files(npy_file_path1, npy_file_path2, window_size, output_csv_file):
@@ -357,3 +385,83 @@ def process_npy_files(npy_file_path1, npy_file_path2, window_size, output_csv_fi
 
     # Display the plot
     plt.show()
+
+
+def read_npy_file_and_print(file_path):
+    try:
+        # Load the NP array from the NPY file
+        data = np.load(file_path)
+
+        # Create a DataFrame from the NP array
+        df = pd.DataFrame(data)
+
+        # Print the DataFrame in tabular form
+        print(df)
+
+    except FileNotFoundError:
+        print(f"File not found: {file_path}")
+    except Exception as e:
+        print(f"An error occurred: {str(e)}")
+
+
+def save_results(date_variable):
+    # Construct the file paths for the NPY files
+    eval_reward_path = os.path.join('training/DQL', date_variable, 'plots/eval_reward.npy')
+    eval_episodes_path = os.path.join('training/DQL', date_variable, 'plots/eval_episodes.npy')
+    eval_episode_len_path = os.path.join('training/DQL', date_variable, 'plots/eval_episode_len.npy')
+
+    try:
+        # Load the evaluation data from the NPY files
+        eval_reward = np.load(eval_reward_path)
+        eval_episodes = np.load(eval_episodes_path)
+        eval_episode_len = np.load(eval_episode_len_path)
+
+        # Find the indexes that sort eval_reward in descending order
+        sorted_indexes = np.argsort(eval_reward)[::-1]
+
+        # Keep the first 5 max indexes
+        top_indexes = sorted_indexes[:5]
+
+        # Sort evaluation data based on sorted indexes
+        sorted_eval_reward = eval_reward[sorted_indexes]
+        sorted_eval_episodes = eval_episodes[sorted_indexes]
+        sorted_eval_episode_len = eval_episode_len[sorted_indexes]
+
+        # Create a DataFrame for the sorted evaluation data
+        sorted_eval_df = pd.DataFrame({
+            'Evaluation': range(1, len(eval_reward) + 1),
+            'Max Reward': sorted_eval_reward,
+            'Episodes': sorted_eval_episodes,
+            'Episode Length': sorted_eval_episode_len
+        })
+
+        # Print the table for the sorted evaluation data
+        print(f"Analysis for Evaluation Session: {date_variable}")
+        print(sorted_eval_df.to_string(index=False))
+
+        # Calculate and print average and median metrics for all evaluations
+        avg_max_reward = np.mean(sorted_eval_reward)
+        median_max_reward = np.median(sorted_eval_reward)
+        avg_max_episodes = np.mean(sorted_eval_episodes)
+        median_max_episodes = np.median(sorted_eval_episodes)
+        avg_max_episode_len = np.mean(sorted_eval_episode_len)
+        median_max_episode_len = np.median(sorted_eval_episode_len)
+
+        print("\nMetrics for Top 5 Evaluations:")
+        print(f"Average Max Reward: {avg_max_reward:.2f}")
+        print(f"Median Max Reward: {median_max_reward:.2f}")
+        print(f"Average Episodes: {avg_max_episodes:.2f}")
+        print(f"Median Episodes: {median_max_episodes:.2f}")
+        print(f"Average Episode Length: {avg_max_episode_len:.2f}")
+        print(f"Median Episode Length: {median_max_episode_len:.2f}")
+
+        # Save the sorted evaluation data to an Excel file in the same path
+        excel_filename = os.path.join('training/DQL', date_variable, 'sorted_evaluation_data.xlsx')
+        sorted_eval_df.to_excel(excel_filename, index=False, engine='openpyxl')
+
+        print(f"Sorted evaluation data saved to {excel_filename}")
+
+    except FileNotFoundError:
+        print(f"File not found for date: {date_variable}")
+    except Exception as e:
+        print(f"An error occurred: {str(e)}")

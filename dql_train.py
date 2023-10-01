@@ -1,216 +1,341 @@
+import gymnasium as gym
 import numpy as np
-import os
-import time
 import json
-import random
-import argparse
+import sys
+import os
 
-import torch
-import torch.nn as nn
+from typing import Sequence, Optional, Union, Mapping
 
-from datetime import datetime
-from shutil import rmtree
-from typing import Mapping
-
-from env import GraphEnv
-from dql import DoubleDQL
-from utils import bellman_ford
+from graph_generator import generate_random_graph, validate_graph
+from utils import plot_graph_network
 
 
-def save_learning_params(max_train_steps: int
-                         ) -> Mapping[str, bool | int | float]:
+class GraphEnv(gym.Env):
     """
-    Saves the training parameters in separate file for reference
-    Parameters
-    ----------
-    max_train_steps: int
-        Maximum number of training steps
+        Custom Gym GraphEnv Class.
 
-    Returns
-    -------
-    dict:
-        A dictionary of training parameters
+        A custom gym Env class representing a Bidirectional Graph for the
+        shortest path problem.
+
+        Attributes
+        ----------
+        num_nodes : int
+            The number of nodes/vertices in the graph
+        destination_node : int
+            The destination node
+        edge_prob : float
+            The probability of an edge from a node to another node in
+            each direction
+        trans_prob_low : float
+            The lower bound of the transition probability
+        trans_prob_high : float
+            The upper bound of the transition probability
+        lambda_ : float
+            The lambda value for the reward function, to control the trade-off
+            between distance travelled and travel time
+        path: str
+            The path to the directory where the graph related data is stored
+        graph_path: str
+            The path to the directory from where load graph related data
     """
-    # Initialize the dictionary
-    learning_params = dict()
 
-    # Environment
-    # -----------
-    learning_params['seed'] = SEED
-    learning_params['num_nodes'] = NUM_NODES
-    learning_params['destination_node'] = DESTINATION_NODE
-    learning_params['edge_prob'] = EDGE_PROB
-    learning_params['trans_prob_low'] = TRANS_PROB_LOW
-    learning_params['trans_prob_high'] = TRANS_PROB_HIGH
-    learning_params['lambda'] = LAMBDA
+    def __init__(self, num_nodes: int, destination_node: int, edge_prob: float,
+                 trans_prob_low: float, trans_prob_high: float,
+                 lambda_: float = 1.0, path: Optional[str] = None,
+                 graph_path: Optional[str] = None):
 
-    # Adam
-    # ----
-    learning_params['lr'] = LR
-    learning_params['beta_1'] = BETA_1
-    learning_params['beta_2'] = BETA_2
+        # Check if the graph_path is provided
+        if graph_path is not None:
+            # Load graph from file
+            self.graph = np.load(graph_path + 'data/graph.npy')
+            self.num_nodes = self.graph.shape[0]
+            self.episode_length = self.num_nodes
 
-    # DQL
-    # -----
-    learning_params['gamma'] = GAMMA
-    learning_params['rho'] = EPSILON
-    learning_params['epsilon_decay'] = EPSILON_DECAY
-    learning_params['epsilon_min'] = EPSILON_MIN
-    learning_params['replay_mem_size'] = REPLAY_MEM_SIZE
-    learning_params['initial_period'] = INITIAL_PERIOD
-    learning_params['main_update_period'] = MAIN_UPDATE_PERIOD
-    learning_params['target_update_period'] = TARGET_UPDATE_PERIOD
+            # Load json file with other environment parameters
+            with open(graph_path + 'learning/params.dat') as pf:
+                env_params = json.load(pf)
 
-    # NN
-    # ----
-    learning_params['hl1_size'] = HL1_SIZE
-    learning_params['hl2_size'] = HL2_SIZE
-    learning_params['batch_size'] = BATCH_SIZE
+            # Set the destination node and lambda value
+            self.destination_node = env_params['destination_node']
+            self.lambda_ = env_params['lambda']
 
-    # Training
-    # --------
-    learning_params['max_train_steps'] = max_train_steps
-    learning_params['eval_freq'] = EVALUATION_FREQUENCY
+            # Load the list of possible starting nodes from file
+            self.possible_starting_nodes = np.load(
+                graph_path + 'data/starting_nodes.npy').tolist()
 
-    return learning_params
+            # Load the transition probability matrix from file
+            self.trans_prob = np.load(graph_path + 'data/trans_prob.npy')
+        else:
+            # The number of nodes/vertices in the graph
+            self.num_nodes = num_nodes
 
+            # The maximum number of steps in an episode. This is set to the
+            # number of nodes in the graph, as the shortest path between any
+            # two nodes cannot be more than the number of nodes in the graph
+            self.episode_length = num_nodes
 
-def main(args):
+            # The fixed destination node for all episodes
+            self.destination_node = destination_node
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            # The lambda value for the reward function, to control the trade-off
+            # between distance travelled and travel time
+            self.lambda_ = lambda_
 
-    # Set random generator seed
-    torch.manual_seed(SEED)
-    np.random.seed(SEED)
-    random.seed(SEED)
+            # Check if the destination node is within the range of the number of
+            # nodes in the graph
+            if (self.destination_node < 0 or
+                    self.destination_node >= self.num_nodes):
+                print("Error: destination_node should be 0 >= destination_node " +
+                      "< num_node")
+                sys.exit()
 
-    # Create a timestamp directory to save model, parameter and log files
-    train_path = \
-        ('training/DQL/' + str(datetime.now().date()) + '_' +
-         str(datetime.now().hour).zfill(2) + '-' +
-         str(datetime.now().minute).zfill(2) + '/')
+            # Generate a random directed cyclical graph with n nodes
+            self.graph = generate_random_graph(num_nodes, edge_prob)
 
-    # Delete if a directory with the same name already exists
-    if os.path.exists(train_path):
-        rmtree(train_path)
+            # Check if the generated graph is valid (traversable)
+            valid_graph, valid_source_nodes, non_dest_nodes = \
+                validate_graph(self.graph, num_nodes)
 
-    # Create empty directories for saving model, parameter and log files
-    os.makedirs(train_path)
-    os.makedirs(train_path + 'plots')
-    os.makedirs(train_path + 'learning')
-    os.makedirs(train_path + 'models')
+            # Regenerate graph, if not valid or if destination-node is not
+            # reachable
+            while not valid_graph or self.destination_node in non_dest_nodes:
+                # Regenerate graph, if not valid
+                self.graph = generate_random_graph(num_nodes, edge_prob)
 
-    # Create the environment
-    env = GraphEnv(
-        num_nodes=NUM_NODES, destination_node=DESTINATION_NODE,
-        edge_prob=EDGE_PROB, trans_prob_low=TRANS_PROB_LOW, lambda_=LAMBDA,
-        trans_prob_high=TRANS_PROB_HIGH)
+                # Check if the generated graph is valid (traversable)
+                valid_graph, valid_source_nodes, non_dest_nodes = validate_graph(
+                    self.graph, num_nodes)
 
-    # If the number of nodes is less than 200, using Bellman-Ford algorithm,
-    # calculate the expected average reward for reaching the destination node
-    # starting from each valid starting node
-    if NUM_NODES <= 200:
-        start_time = time.time()
-        graph_copy = np.copy(env.graph)
-        distances, shortest_paths = bellman_ford(
-            graph_copy, env.trans_prob, NUM_NODES, DESTINATION_NODE,
-            env.possible_starting_nodes, LAMBDA)
-        end_time = time.time()
-        print(f"Time taken for Bellman-Ford: {end_time - start_time:.2f} sec")
+            # List of possible starting-nodes, from which an episode can start
+            self.possible_starting_nodes = valid_source_nodes
 
-        # The expected average reward is the mean of the difference between the
-        # maximum possible reward and the distance from each valid starting
-        # node to the destination node
-        expected_avg_reward = np.mean((NUM_NODES * 10) - np.array(distances))
-        print(f"expected_avg_reward: {np.round(expected_avg_reward, 4)}")
-    else:
-        # If the number of nodes is greater than 200, the expected average
-        # reward is not calculated as the time complexity of Bellman-Ford
-        # algorithm is O(V*E) and the number of edges is O(V^2), so
-        # O(V*E) = O(V^3) and for large number of nodes (V), i.e. > 200,
-        # O(V^3) is very large. So, for large number of nodes, the expected
-        # average reward is not calculated as it is not required for training
-        # the agent
-        expected_avg_reward = None
+            # Check if the destination-node is in the list of possible starting
+            # nodes, and remove if it is
+            if self.destination_node in self.possible_starting_nodes:
+                self.possible_starting_nodes.remove(self.destination_node)
 
-    # expected_avg_reward = 4985.52795  # Pre-calculated for 500 nodes
+            # Generate a random transition probability matrix for the graph, by
+            # sampling from a uniform distribution
+            self.trans_prob = np.random.uniform(trans_prob_low,
+                                                trans_prob_high,
+                                                (num_nodes, num_nodes))
 
-    print(f"env.observation_space.size(): {env.observation_space.shape}")
-    print(f"env.action_space: {env.action_space.n}")
+            # Make diagonals (self-edge) of the transition probability matrix
+            # have maximum probability
+            np.fill_diagonal(self.trans_prob, 1.0)
 
-    # Save the learning parameters for reference
-    learning_params = save_learning_params(args.max_train_steps)
+            # Make transition probability for non-existing edges 0
+            self.trans_prob *= np.array(self.graph >= 0, dtype=int)
 
-    # Dump learning params to file
-    with open(train_path + 'learning/params.dat', 'w') as jf:
-        json.dump(learning_params, jf, indent=4)
+        if path is not None:
+            # Save the graph, transition probability matrix, and the list of
+            # possible starting nodes to file
+            if not os.path.exists(path + 'data/'):
+                os.makedirs(path + 'data')
+            np.save(path + 'data/graph.npy', self.graph)
+            np.save(path + 'data/trans_prob.npy', self.trans_prob)
+            np.save(path + 'data/starting_nodes.npy',
+                    self.possible_starting_nodes)
 
-    # Loss function for optimization - Mean Squared Error loss
-    mse_loss = nn.MSELoss()
+        # Variables to keep track of the current state of the environment
+        self.current_node = None
+        self.episode_step = 0
 
-    # The DoubleDQL class object
-    dqn = DoubleDQL(
-        train_env=env, loss_fn=mse_loss, gamma=GAMMA, lr=LR, epsilon=EPSILON,
-        replay_mem_size=REPLAY_MEM_SIZE, hl1_size=HL1_SIZE, hl2_size=HL2_SIZE,
-        device=device)
+        # Plot the graph for visualization
+        plot_graph_network(X=self.graph, v=num_nodes, dest=destination_node)
 
-    # Train the agent
-    dqn.train(
-        training_steps=args.max_train_steps, init_training_period=INITIAL_PERIOD,
-        main_update_period=MAIN_UPDATE_PERIOD, batch_size=BATCH_SIZE,
-        target_update_period=TARGET_UPDATE_PERIOD, show_plot=args.plot,
-        evaluation_freq=EVALUATION_FREQUENCY, baseline=expected_avg_reward,
-        path=train_path)
+        # Define the observation space range
+        obs_low = np.array([-1] * num_nodes) / 10
+        obs_high = np.array([10] * num_nodes) / 10
 
+        # Observation space defined as a 1d vector, where -1 represents no edge,
+        # and a positive value represents the weights to a connected node.
+        # Self edges are represented with the maximum weight of 10, while edges
+        # to other nodes are in the range [1, 9]
+        self.observation_space = \
+            gym.spaces.Box(shape=(num_nodes,), low=obs_low, high=obs_high)
 
-if __name__ == '__main__':
-    # Environment
-    # -----------
-    SEED = 0
-    NUM_NODES = 25
-    DESTINATION_NODE = 20
-    EDGE_PROB = 0.3
-    TRANS_PROB_LOW = 0.2
-    TRANS_PROB_HIGH = 0.8
-    LAMBDA = 0.5
+        # An action represents a node (including self) to transition to
+        self.action_space = gym.spaces.Discrete(num_nodes)
 
-    # Adam
-    # ------
-    LR = 0.001
-    BETA_1 = 0.9
-    BETA_2 = 0.999
+    def reset(self, starting_node: int = None) -> Sequence[
+            Union[np.array, Mapping[str, Union[np.array, str]]]]:
+        """
+           Wrapper method for performing reset of the simulation environment.
 
-    # TDL
-    # -----
-    GAMMA = 0.99
-    EPSILON = 1.0
-    EPSILON_DECAY = 0.99999
-    EPSILON_MIN = 0.01
+           This method sets a starting node, and resets other environment
+           variables.
 
-    # NN
-    # ----
-    HL1_SIZE = 256
-    HL2_SIZE = 256
-    BATCH_SIZE = 256
+           Parameters
+           ----------
+           starting_node : int
+               Optional starting node for the episode.
 
-    # DQL
-    # -----
-    REPLAY_MEM_SIZE = 500_000
-    INITIAL_PERIOD = 5000
-    MAIN_UPDATE_PERIOD = 4
-    TARGET_UPDATE_PERIOD = 100
+           Returns
+           -------
+           np.array
+               An array of observations
+            Mapping[str, Union[np.array, str]]
+               A dict object with info pertaining to the environment at the
+               current time-step: action_mask and the current_node
+        """
 
-    # Logging
-    # ---------
-    EVALUATION_FREQUENCY = 500
+        super().reset()
 
-    parser = argparse.ArgumentParser(description='DDQL Training for Shortest Path problem')
-    parser.add_argument('--max_train_steps', type=int, default=1_000_000,
-                        help='Maximum number of training steps (default: 1_000_000)')
-    parser.add_argument('--plot',  default=False, action='store_true',
-                        help='Plot learning curve (default: False)')
-    parser.add_argument('--verbose',  default=False, action='store_true',
-                        help='Output training logs (default: False)')
-    args = parser.parse_args()
+        if starting_node is None:
+            # Reset starting node of an episode by randomly choosing form the
+            # possible starting nodes list
+            self.current_node = np.random.choice(self.possible_starting_nodes)
+        else:  # User defined starting-node
+            # Check if the user defined starting-node is in the list of
+            # possible starting nodes
+            if starting_node not in self.possible_starting_nodes:
+                print(f"Error: In env.reset(), starting_node: {starting_node}" +
+                      " should be in the list of possible_starting_nodes: " +
+                      f"{self.possible_starting_nodes}")
+                sys.exit()
 
-    main(args)
+            self.current_node = starting_node
+
+        # Reset the episode step counter
+        self.episode_step = 0
+
+        # Get observation as the current state of the graph.
+        # The observation is the weight of outgoing edges between the current
+        # node and all other nodes in the graph, and normalized to the
+        # range: [-1, 1]
+        observation = self.graph[self.current_node] / 10
+
+        # Create action-mask to indicate valid actions from the current state
+        # i.e, valid nodes that the agent can transition to from the current
+        # node
+        info = {'action_mask': np.array(observation >= 0, dtype=int),
+                'current_node': self.current_node}
+
+        return observation, info
+
+    def step(self, action, eval: bool = False) -> Sequence[
+       Union[np.array, float, bool, Mapping[str, Union[np.array, str]]]]:
+        """
+           Wrapper method for performing one step through the simulation
+           environment.
+
+           Parameters
+           ----------
+           action : int
+               The agent's action for the current time-step.
+           eval : bool
+               Flag to indicate if the environment is being used for evaluation
+               or training.
+
+           Returns
+           -------
+           np.array
+               An array of observations
+           float
+               The scalar reward value
+           bool
+               True if the episode has terminated
+           bool
+               True if the end-of-episode has been reached
+           Mapping[str, Union[np.array, str]]
+               A dict object with info pertaining to the environment at the
+               current time-step: action_mask and the current_node
+        """
+
+        # Get the distance/weight of the edge between the current node and the
+        # node the agent intends to transition to
+        distance = self.graph[self.current_node, action]
+
+        # Travel time is the same as the distance, since we are considering
+        # speed of travel as one unit of distance travelled per unit of time.
+        travel_time = self.graph[self.current_node, action]
+
+        if distance < 0:
+            # The agent is trying to travers through a non-existing edge.
+            # Terminate the episode and penalize the agent
+            terminated = True
+            reward = -self.num_nodes * 10
+            print("EPISODE TERMINATED: Trying to travers through a " +
+                  f"non-existing edge: {action}.")
+            print("List of possible transition nodes: " +
+                  f"{np.where(self.graph[self.current_node] > 0)[0].tolist()}")
+        else:
+            if eval:
+                # The expected travel time is the travel time multiplied by the
+                # inverse of the transition probability.
+                # Since we are considering speed of travel as one unit of
+                # distance travelled per unit of time, the travel time is the
+                # same as the distance.
+                expected_travel_time = distance * \
+                    (1 / self.trans_prob[self.current_node, action])
+
+                # The reward is modelled as a combination of expected travel
+                # time and the expected distance travelled, based on the
+                # transition probability
+                reward = -((self.lambda_ * expected_travel_time) +
+                           ((1 - self.lambda_) * distance))
+
+                # During policy evaluation, transition to the next-node without
+                # considering transition probability, but the reward is
+                # calculated as the expected reward based on the transition
+                # probability
+                self.current_node = action
+            else:
+                # Transition to the next-node based on the transition
+                # probability
+                if np.random.rand(1) <= self.trans_prob[
+                   self.current_node, action]:
+                    # Transition to the next-node, if the transition probability
+                    # is met
+                    self.current_node = action
+                else:
+                    # Stay in the current node, if the transition probability
+                    # is not met. Hence, the distance travelled is 0
+                    distance = 0
+
+                # The reward is modelled as a combination of travel time and
+                # distance travelled. Even when the agent stays in the current
+                # node (due to transition probability), the travel time is
+                # considered, to emulate the additional time taken to traverse
+                # through an edge on disruption
+                reward = -((self.lambda_ * travel_time) +
+                           ((1 - self.lambda_) * distance))
+
+            terminated = False
+
+        # Get the new observation as the current state of the graph.
+        # The observation is the weight of outgoing edges between the current
+        # node and all other nodes in the graph, and normalized to the
+        # range: [-1, 1]
+        observation = self.graph[self.current_node] / 10
+
+        # Increment the episode by one step
+        self.episode_step += 1
+        truncated = False
+
+        # Check if the end-of-episode has been reached
+        if self.episode_step >= self.episode_length:
+            if self.current_node == self.destination_node:
+                # Reached destination node on the last step. Just terminate the
+                # episode
+                terminated = True
+            else:
+                # Reached end of episode without reaching destination-node
+                # Penalize the agent for not reaching the destination-node in
+                # the episode
+                reward += -self.num_nodes * 10
+                truncated = True
+        elif self.current_node == self.destination_node:
+            # Reached destination-node before end-of-episode
+            # Terminal the episode
+            terminated = True
+
+        # Create action-mask to indicate valid actions from the current state
+        # i.e, valid nodes that the agent can transition to from the current
+        # node
+        info = {'action_mask': np.array(observation >= 0, dtype=int),
+                'current_node': self.current_node, 'distance': distance,
+                'travel_time': expected_travel_time if eval else travel_time}
+
+        return observation, reward, terminated, truncated, info

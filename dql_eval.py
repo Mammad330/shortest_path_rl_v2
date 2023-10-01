@@ -3,6 +3,7 @@ import torch
 import json
 import random
 import argparse
+import os
 
 from env import GraphEnv
 from dql import DoubleDQL
@@ -26,7 +27,11 @@ def main(args):
         num_nodes=params['num_nodes'], edge_prob=params['edge_prob'],
         destination_node=params['destination_node'], lambda_=params['lambda'],
         trans_prob_low=params['trans_prob_low'],
-        trans_prob_high=params['trans_prob_high'])
+        trans_prob_high=params['trans_prob_high'],
+        graph_path=(args.path if os.path.isfile(args.path + 'data/graph.npy')
+                    else None),
+        path=(None if os.path.isfile(args.path + 'data/graph.npy') else
+              args.path))
 
     print(f"env.observation_space.size(): {env.observation_space.shape}")
     print(f"env.action_space.n: {env.action_space.n}")
@@ -35,7 +40,7 @@ def main(args):
     dqn = DoubleDQL(train_env=env, hl1_size=params['hl1_size'],
                     hl2_size=params['hl2_size'], device=device)
 
-    # Load the saved best policy model from file
+    # Load the saved-best policy model from file
     dqn.load_main_dqn(model_path=args.path + 'models/best_policy.pth')
 
     # Evaluate the model

@@ -341,7 +341,7 @@ class DoubleDQL():
                     self.train_env.step(action, eval=True)
 
                 # Update the episode reward and episode length
-                episode_reward += reward
+                episode_reward += -reward
                 episode_length += 1
 
             # Store the normalized reward and the length of the current episode
@@ -380,6 +380,7 @@ class DoubleDQL():
         # length (number of hops)
         episode_rewards = list()
         episode_distances = list()
+        episode_times = list()
         episode_lengths = list()
         num_completed = 0
 
@@ -391,6 +392,8 @@ class DoubleDQL():
             # Initialize the episode reward and episode length
             episode_reward = 0
             episode_length = 0
+            episode_distance = 0
+            episode_time = 0
             terminated = truncated = False
 
             # Initialize a list to store the path and actions taken by the agent
@@ -417,7 +420,9 @@ class DoubleDQL():
                     self.train_env.step(action, eval=eval_mode)
 
                 # Update the episode reward and episode length
-                episode_reward += reward
+                episode_reward += -reward
+                episode_distance += info['distance']
+                episode_time += info['travel_time']
                 episode_length += 1
 
                 # Store the path and the action taken by the agent
@@ -429,7 +434,8 @@ class DoubleDQL():
 
             # Store the normalized reward and the length of the current episode
             episode_rewards.append(episode_reward)
-            episode_distances.append((num_nodes * 10) - episode_reward)
+            episode_distances.append(episode_distance)
+            episode_times.append(episode_time)
             episode_lengths.append(episode_length)
 
             # Increment the number of completed episodes (where the agent
@@ -447,9 +453,11 @@ class DoubleDQL():
                 path_string = str([' -> '.join(path_list)])
 
                 print(f"Shortest path from {from_node} to {to_node}: " +
-                      f"{path_string} -- Total Distance: " +
-                      f"{np.round((num_nodes * 10) - episode_reward, 4)} " +
-                      f"({episode_length} hops)")
+                      f"{path_string} -- Total Reward: " +
+                      f"{np.round(episode_reward, 4)} -- Total Distance: " +
+                      f"{episode_distance} -- Total Time: " +
+                      f"{np.round(episode_time, 4)} -- No. of hops: " +
+                      f"{episode_length}")
             else:
                 path_string = path_list[0]
                 for path, action in zip(path_list[1:], action_list):
@@ -461,13 +469,22 @@ class DoubleDQL():
         # Final policy evaluation statistics
         print("\nFinal Policy Evaluation Statistics:")
         print(f"Total number of episodes: {len(episode_rewards)}")
-        print(f"Mean Normalized Episodic Reward: {np.mean(episode_rewards)}")
+        print("Mean Normalized Episodic Reward: " +
+              f"{np.round(np.mean(episode_rewards), 4)}")
         print("Median Normalized Episodic Reward: " +
-              f"{np.median(episode_rewards)}")
-        print(f"Mean Distance to Destination: {np.mean(episode_distances)}")
-        print(f"Median Distance to Destination: {np.median(episode_distances)}")
-        print(f"Mean Episode Length: {np.mean(episode_lengths)}")
-        print(f"Median Episode Length: {np.median(episode_lengths)}")
+              f"{np.round(np.median(episode_rewards), 4)}")
+        print("Mean Distance to Destination: " +
+              f"{np.round(np.mean(episode_distances), 4)}")
+        print("Median Distance to Destination: " +
+              f"{np.round(np.median(episode_distances), 4)}")
+        print("Mean Expected Travel Time: " +
+              f"{np.round(np.mean(episode_times), 4)}")
+        print("Median Expected Travel Time: " +
+              f"{np.round(np.median(episode_times), 4)}")
+        print("Mean Episode Length: " +
+              f"{np.round(np.mean(episode_lengths), 4)}")
+        print("Median Episode Length: " +
+              f"{np.round(np.median(episode_lengths), 4)}")
         print(f"Total no. of episodes completed: " +
               f"{num_completed} out of {len(episode_rewards)} episodes")
 
@@ -531,7 +548,7 @@ class DoubleDQL():
         episode_reward = 0
         episode_duration = 0
         episode_count = 0
-        best_eval_reward = -np.inf
+        best_eval_reward = np.inf
         saved_model_txt = None
 
         self.main_dqn.train()
@@ -563,7 +580,7 @@ class DoubleDQL():
                 state, action, reward, done, info['action_mask'])
 
             # Normalized reward
-            episode_reward += reward
+            episode_reward += -reward
 
             # Episode length for plotting
             episode_duration += 1
@@ -640,7 +657,7 @@ class DoubleDQL():
 
                 # Save a snapshot of the best policy (main-dqn) based on the
                 # evaluation results
-                if mean_eval_rewards > best_eval_reward:
+                if mean_eval_rewards < best_eval_reward:
                     torch.save(self.main_dqn.state_dict(),
                                path + 'models/best_policy.pth')
                     best_eval_reward = mean_eval_rewards
